@@ -1,0 +1,60 @@
+
+syntax = "proto3";
+
+package custody;
+
+// Key Generation Service
+service KeyService {
+    rpc GenerateKeySet (GenerateKeyRequest) returns (GenerateKeyResponse);
+}
+
+message GenerateKeyRequest { 
+    uint32 threshold = 1;
+    uint32 participants = 2;
+}
+
+message GenerateKeyResponse {
+    repeated bytes sealed_shards = 1;
+    bytes group_public_key = 2;
+}
+
+// Signing Service
+service SigningService {
+    rpc CreateSession (CreateSessionRequest) returns (CreateSessionResponse);
+    rpc SubmitSignatureShare (SubmitSignatureShareRequest) returns (SubmitSignatureShareResponse);
+    rpc AggregateSignature (AggregateSignatureRequest) returns (AggregateSignatureResposne);
+}
+
+message CreateSessionRequest {
+    string message = 1;
+    uint32 participant_id = 2;
+}
+
+message CreateSessionResponse {
+    bytes commitment = 1;
+}
+
+message SubmitSignatureShareRequest {
+    uint32 participant_id = 1;
+    string message = 2;
+    bytes signature_share = 3;
+}
+
+message SubmitSignatureShareResponse {
+    string status = 1;
+}
+
+message AggregateSignatureResponse {
+  bytes full_signature = 1;
+}
+
+// Health Check
+service HealthService {
+  rpc Check (HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+message HealthCheckRequest {}
+
+message HealthCheckResponse {
+  string status = 1;
+}

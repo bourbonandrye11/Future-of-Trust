@@ -2,3 +2,7 @@
 members = [
 	"custody_engine"
 ]
+
+[bin]
+name = "custody"
+path = "src/main.rs"
