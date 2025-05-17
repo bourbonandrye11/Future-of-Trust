@@ -1,0 +1,18 @@
+[package]
+name = "engine"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+uuid = { version = "1", features = ["v4"] }
+aes-gcm = "0.10"
+rand = "0.8"
+zeroize = "1.5"
+blake3 = "1.5"
+tracing = "0.1" 
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "time", "json"] }
+tracing-appender = "0.2"
+chrono = { version = "0.4", features = ["serde"] }
+
+
+# cargo build -p custody-engine

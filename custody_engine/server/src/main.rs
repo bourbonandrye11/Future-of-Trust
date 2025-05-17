@@ -6,6 +6,9 @@ use service::key_service::MyKeyService;
 use service::signing_service::MySigningService;
 use service::signing_service::SigningSessionStore;
 use service::health_service::MyHealthService;
+use custody_engine::logging::init_logging;
+use custody::custody_management_service_server::CustodyManagementServiceServer;
+use crate::server::custody_management_service::CustodyManagementServer;
 //use custody::key_service_server::KeyServiceServer;
 //use custody::signing_service_server::SigningServiceServer;
 //use custody::health_service_server::HealthServiceServer;
@@ -20,9 +23,10 @@ pub mod custody {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Set up logging (e.g., info!, error!, etc.)
     tracing_subscriber::fmt::init();
+    init_logging("/var/log/custody", true); // JSON preferred in prod
 
     // Output simple startup message to the console (visible to user)
-    println!("Starting Custody gRPC Server on [::1}:50051");
+    info!("Starting Custody gRPC Server on [::1}:50051");
 
     // Create a shared store for signing sessions
     let signing_store = SigningSessionStore::default();
@@ -30,16 +34,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         store: Arc::new(signing_store),
     };
 
+    // Create a shared OperationalDIDRegistry
+    let did_registry = OperationalDIDRegistry::new();
+
+    // Initialize custody management service
+    let custody_mgmt_service = CustodyManagementServer {
+        registry: did_registry.clone(),
+    };
+
     // Start the gRPC server and bind our service handlers (to be implemented)
     server::builder()
         .add_service(KeyServiceServer::new(MyKeyService::default()))
         .add_service(SigningServiceServer::new(MySigningService::default()))
         .add_service(HealthServiceServer::new(MyHealthService::default()))
+        .add_service(CustodyManagementServiceServer::new(custody_mgmt_service))
         .serve("[::1]:50051".parse()?)
         .await?;
     Ok(())
 }
 
+// Use TLS/mTLS → add .tls_config(...) to the server builder
+// We can skip TLS for local dev but should include it for production.
 // to run the gRPC server
 // cargo run -p custody_server
 

@@ -2,8 +2,13 @@
 /// 
 
 use clap::{Parser, Subcommand};
+use frost_ed25519::SignatureShare;
+use custody_engine::utils::filename::validate_shard_filename;
+use custody_engine::audit::{AUDIT, AuditRecord, AuditEventType, now_rfc3339};
+use custody_engine::logging::init_logging;
+use std::path::Path;
 use custody_engine::{
-    init_logging,
+   // init_logging,
     crypto::{keys, signing},
     mpc::SigningSession,
     types::ParticipantId,
@@ -12,6 +17,8 @@ use custody_engine::{
 #[derive(Parser)]
 #[command(name = "custody", version = "0.1", author = "Custody Team", about = "Custody MPC CLI")]
 struct Cli {
+    #[arg(long, default_value = "tee-sim", help = "Vault mode: memory | tee-sim")]
+    vault: String, // New flag
     #[command(subcommand)]
     command: Commands,
 }
@@ -48,13 +55,47 @@ enum Commands {
         #[arg(short, long)]
         msg: String,
     }
+
+    /// Aggregate multiple partial signature shares into one final signature
+    AggregateSignature {
+        #[arg(short, long, help = "Hex-encoded partial signatures")]
+        shares: Vec<String>, // e.g., --shares abcd --shares efgh
+
+        #[arg(short, long, help = "Original message that was signed")]
+        msg: String,
+    },
 }
 fn main() {
     // Initialize structured logging using `tracing`
     // This sets up debug/info/error level logging across the CLI
-    init_logging();
+    // Log to ./logs in logfmt format (change `true` for JSON)
+    init_logging("logs", false);
 
-     // Parse CLI arguments using clap (see `Cli` and `Commands` structs)
+    // choose the vault mode based on CLI flag
+    let vault_mode = match cli.vault.as_str() {
+        "memory" => VaultMode::Memory,
+        "tee-sim" => VaultMode::SimulatedTee,
+        other => {
+            eprintln!("Unknown vault mode: {}", other);
+            std::process::exit(1);
+        }
+    };
+
+    // Initialize vault engine
+    custody_engine::vault::init(vault_mode);
+
+    // enforces filename starts with shard_ | ends with .bin | contains numeric index | blocks .json .txt etc
+    match validate_shard_filename(&shard_path) {
+        Ok(meta) => {
+            println!("Parsed shard file: participant {}", meta.participant_id);
+        }
+        Err(e) => {
+            eprintln!("Invalid shard file: {}", e);
+            std::process::exit(1);
+        }
+    }
+
+    // Parse CLI arguments using clap (see `Cli` and `Commands` structs)
     // This handles subcommands and flags like: `generate-keys`, `sign-message`, etc.
     let cli = Cli::parse();
 
@@ -76,6 +117,14 @@ fn main() {
                 std::fs::write(&path, shard).expect("Failed to write shard");
                 println!("saved sealed shard: {}", path);
             }
+
+            AUDIT.log(AuditRecord {
+                event_type: AuditEventType::Keygen,
+                session_id: hex::encode(&group_public_key), // Or a UUID if generated
+                participant_id: None,
+                message: format!("Generated {} shards with threshold {}", participants, threshold),
+                timestamp: now_rfc3339(),
+            });            
         }
 
         // Subcommand: SignMessage
@@ -88,13 +137,99 @@ fn main() {
             // Generate fresh nonce for the participant
             session.generate_nonce(ParticipantId(participant)).unwrap();
 
+            if session.submitted_participants.contains(&participant_id) {
+                eprintln!("Participant {} already signed for this session", participant_id.0);
+                std::process::exit(1);
+            }            
+
             // Create a partial signature share
             let sig = session.create_partial_signature(ParticipantId(participant), &data)
                 .expect("Failed to create partial signature");
 
                 // Output the partial signature in hex format
             println!("Partial signature: {}", hex::encode(sig.to_bytes()));
+
+            fn validate_shard_filename(path: &str) -> Result<(), String> {
+                let path = Path::new(path);
+                let filename = path.file_name()
+                    .ok_or("Missing shard filename")?
+                    .to_str()
+                    .ok_or("Invalid shard filename")?;
+            
+                // Enforce pattern: shard_<N>.bin
+                let parts: Vec<&str> = filename.split('_').collect();
+                if parts.len() != 2 || !parts[0].eq("shard") {
+                    return Err("Shard filename must start with 'shard_'".into());
+                }
+            
+                if !parts[1].ends_with(".bin") {
+                    return Err("Shard file must end with '.bin'".into());
+                }
+            
+                let index_part = parts[1].trim_end_matches(".bin");
+                index_part
+                    .parse::<u8>()
+                    .map_err(|_| "Shard filename must end with a number".into())?;
+            
+                Ok(())
+            }
+
+            AUDIT.log(AuditRecord {
+                event_type: AuditEventType::Signing,
+                session_id,
+                participant_id: Some(participant),
+                message: format!("Signed message of {} bytes", msg.len()),
+                timestamp: now_rfc3339(),
+            });            
         }
+
+        Commands::AggregateSignature { shares, msg } => {
+            // Step 1: Parse all partial signatures from hex
+            let parsed_shares: Result<Vec<SignatureShare>, _> = shares
+                .iter()
+                .map(|s| {
+                    // turns the hex string into a byte array (Vec<u8>) - required for deserializing signature shares.
+                    let bytes = hex::decode(s)
+                        .map_err(|e| format!("Invalid hex: {}", e))?;
+                    // converts raw bytes into a signatureShare object that the custody engine understands.
+                    SignatureShare::from_bytes(&bytes)
+                        .map_err(|e| format!("Invalid signature share: {:?}", e))
+                })
+                .collect();
+
+            let partials = match parsed_shares {
+                Ok(sigs) => sigs,
+                Err(e) => {
+                    eprintln!("Failed to parse signature shares: {}", e);
+                    std::process::exit(1);
+                }
+            };
+
+            // Step 2: Create dummy session to call aggregation (no state needed here)
+            let session = SigningSession:new(msg.Clone().into_bytes(), partials.len());
+
+            // Step 3: Aggregate the shares into a final signature
+            let result = session.aggregate_partial_signatures(partials);
+
+            let signature = match result {
+                Ok(sig) => sig,
+                Err(e) => {
+                    eprintln!("Aggregation failed: {:?}", e);
+                    std::process::exit(1);
+            }
+        };
+
+        // Step 4: Print the final aggregated signature for CLI output
+    println!("Final Signature (hex): {}", hex::encode(signature.to_bytes()));
+
+    AUDIT.log(AuditRecord {
+        event_type: AuditEventType::Aggregation,
+        session_id: blake3::hash(msg.as_bytes()).to_hex().to_string(),
+        participant_id: None,
+        message: format!("Aggregated {} shares into final signature", shares.len()),
+        timestamp: now_rfc3339(),
+    });    
+}
 
         // Subcommand: VerifySignature
         // Verifies a full aggregated Schnorr signature
@@ -108,6 +243,18 @@ fn main() {
                 Ok(_) => println!("Signature verified"),
                 Err(e) => println!("Invalid signature: {}", e),
             }
+
+            AUDIT.log(AuditRecord {
+                event_type: AuditEventType::Verification,
+                session_id: blake3::hash(msg.as_bytes()).to_hex().to_string(),
+                participant_id: None,
+                message: "Successfully verified aggregated signature".into(),
+                timestamp: now_rfc3339(),
+            });            
         }
     }
 }
+
+// cargo run -p cli -- generate-keys --threshold 2 --participants 3 --vault tee-sim
+// --vault memory
+// cargo run -p cli -- aggregate-signature --shares abcd --shares efgh --msg "hello" --vault tee-sim

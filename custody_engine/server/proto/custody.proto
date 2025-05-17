@@ -27,21 +27,27 @@ service SigningService {
 
 message CreateSessionRequest {
     string message = 1;
-    uint32 participant_id = 2;
+    uint32 threshold = 2;
+    bytes group_public_key = 3;
 }
 
 message CreateSessionResponse {
-    bytes commitment = 1;
+    string session_id = 1;
+    bytes commitment = 2;
 }
 
 message SubmitSignatureShareRequest {
-    uint32 participant_id = 1;
-    string message = 2;
+    string session_id = 1;
+    uint32 participant_id = 2;
     bytes signature_share = 3;
 }
 
 message SubmitSignatureShareResponse {
     string status = 1;
+}
+
+message AggregateSignatureRequest {
+  string session_id = 1;
 }
 
 message AggregateSignatureResponse {
@@ -57,4 +63,128 @@ message HealthCheckRequest {}
 
 message HealthCheckResponse {
   string status = 1;
+}
+
+// ==========================
+// Custody Management Service
+// ==========================
+
+service CustodyManagementService {
+    rpc ProvisionIdentityMaterial(ProvisionIdentityMaterialRequest) returns (ProvisionIdentityMaterialResponse);
+    rpc RegisterOperationalDID(RegisterOperationalDIDRequest) returns (RegisterOperationalDIDResponse);
+    rpc RotateOperationalDID(RotateOperationalDIDRequest) returns (RotateOperationalDIDResponse);
+    rpc RevokeOperationalDID(RevokeOperationalDIDRequest) returns (RevokeOperationalDIDResponse);
+
+    rpc AddOrRotateVCs(AddOrRotateVCsRequest) returns (AddOrRotateVCsResponse);
+    rpc GetVCsForOperationalDID(GetVCsForOperationalDIDRequest) returns (GetVCsForOperationalDIDResponse);
+    rpc VerifyVCIntegrity(VerifyVCIntegrityRequest) returns (VerifyVCIntegrityResponse);
+
+    rpc GetVCAuditTrail(GetVCAuditTrailRequest) returns (GetVCAuditTrailResponse);
+}
+
+// ==========================
+// Message Types
+// ==========================
+
+// Generic identifiers
+message OperationalDID {
+    string id = 1;
+}
+
+message RootDID {
+    string id = 1;
+}
+
+message VerifiableCredential {
+    bytes payload = 1; // Raw VC bytes (likely JSON-LD or JWT)
+}
+
+// ==========================
+// DID Management Requests
+// ==========================
+
+message RegisterOperationalDIDRequest {
+  OperationalDID operational_did = 1;
+  RootDID root_did = 2;
+}
+
+message RegisterOperationalDIDResponse {}
+
+message RotateOperationalDIDRequest {
+  OperationalDID old_did = 1;
+  OperationalDID new_did = 2;
+}
+
+message RotateOperationalDIDResponse {}
+
+message RevokeOperationalDIDRequest {
+  OperationalDID operational_did = 1;
+}
+
+message RevokeOperationalDIDResponse {}
+
+message GetRootForOperationalDIDRequest {
+  OperationalDID operational_did = 1;
+}
+
+message GetRootForOperationalDIDResponse {
+  RootDID root_did = 1;
+}
+
+// ==========================
+// VC Management Requests
+// ==========================
+
+message ProvisionIdentityMaterialRequest {
+    string operational_did = 1; // Provided by Identity Engine
+    string root_did = 2; // Provided by Identity Engine
+    string identity_alias = 3; // optional, e.g., human-readable label
+}
+
+message ProvisionIdentityMaterialResponse {
+    bytes public_key_commitment = 1; // Custody-Backed public key or proof
+    string vault_reference = 2; // Internal vault ID or handle
+    bytes custody_proof = 3; // optional future field for ZKP or attestation
+}
+
+message AddOrRotateVCsRequest {
+    OperationalDID operational_did = 1;
+    repeated VerifiableCredential vcs = 2;
+}
+
+message AddOrRotateVCsResponse{}
+
+message GetVCsForOperationalDIDRequest {
+  OperationalDID operational_did = 1;
+}
+
+message GetVCsForOperationalDIDResponse {
+  repeated VerifiableCredential vcs = 1;
+}
+
+message VerifyVCIntegrityRequest {
+  OperationalDID operational_did = 1;
+  VerifiableCredential vc = 2;
+}
+
+message VerifyVCIntegrityResponse {
+  bool valid = 1;
+}
+
+// ==========================
+// Audit Trail Requests
+// ==========================
+
+message GetVCAuditTrailRequest {
+  OperationalDID operational_did = 1;
+}
+
+message AuditRecord {
+  string event_type = 1;
+  string message = 2;
+  string timestamp = 3;
+}
+
+message GetVCAuditTrailResponse {
+  repeated AuditRecord records = 1;
 }
