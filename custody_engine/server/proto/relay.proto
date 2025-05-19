@@ -1,0 +1,16 @@
+
+syntax = "proto3";
+
+package custodyrelay;
+
+message RelayMessage {
+  string group_id = 1;
+  string from_node = 2;
+  bytes payload = 3;
+}
+
+message Empty {}
+
+service CustodyRelay {
+  rpc SendMessage(RelayMessage) returns (Empty);
+}

@@ -26,7 +26,7 @@ use crate::error::CustodyError;
 use crate::vault::Vault;
 use crate::types::ParticipantId;
 
-/// A signing sessin tracks all nonces, commitments, and partial signatures for a message.
+/// A signing session tracks all nonces, commitments, and partial signatures for a message.
 pub struct SigningSession {
     /// The message to be signed.
     pub message: Vec<u8>,
@@ -108,7 +108,7 @@ impl SigningSession {
         let group_commitment = self.aggregate_commitments()?;
 
         // step 4: Derive the signing challenge
-        let challenge = FristCiphersuite::challenge(
+        let challenge = FrostCiphersuite::challenge(
             &group_commitment,
             &key_package.public.group_public,
             self.message.as_slice(),
@@ -172,4 +172,95 @@ impl MpcSigner {
     every shard holder can indepenedently produce their own secure signature share
     */
 
+
+pub struct MPCSigningCoordinator;
+
+/// Loops over all MPC members
+/// requests partial signatures from each vault
+/// aggregates them into a threshold signature using FROST
+/// only vault internal logic can access shards; the coordinator just orchestrates.
+impl MPCSigningCoordinator {
+    // added this because newest version had it
+    pub fn new() -> Self {
+        MpcSigningCoordinator { }
+    }
+
+    /// Signs the root VC using MPC/FROST flow
+    /// this was added at the end for handling Signing the Root VC. need to build out the remaining logic still.
+    pub async fn sign_root_vc(&self, issuer_did: &str, vc_json: &str) -> Result<String, String> {
+        println!("MPC signing for root VC with DID: {}", issuer_did);
+
+        // [STEP 1] Deserialize VC JSON → canonical form
+        // [STEP 2] Hash VC payload → message digest
+        // [STEP 3] Trigger MPC threshold signing over the digest
+        // [STEP 4] Collect partial signatures, aggregate into final signature
+        // [STEP 5] Embed signature back into VC JSON structure
+
+        // For now, we'll stub this return
+        Ok(format!("{{\"signed_root_vc\": \"MPC_SIGNATURE_PLACEHOLDER\"}}"))
+    }
+    pub fn sign_with_group(
+        &self,
+        group: &MPCGroupDescriptor,
+        message: &[u8],
+    ) -> Result<Vec<u8>, MPCError> {
+        // Step 1: Collect responses from all vault members
+        let mut partial_signatures = Vec::new();
+
+        for member in &group.members {
+            let partial_sig = self.request_partial_signature(
+                &member.vault_reference,
+                &member.custody_node_id,
+                message,
+            )?;
+            partial_signatures.push((member.shard_index, partial_sig));
+        }
+
+        // Step 2: Aggregate threshold signature (FROST)
+        let aggregated_signature = frost_aggregate_signatures(&partial_signatures, group.threshold)?;
+
+        Ok(aggregated_signature)
+    }
+
+    fn request_partial_signature(
+        &self,
+        vault_reference: &str,
+        custody_node_id: &str,
+        message: &[u8],
+    ) -> Result<Vec<u8>, MPCError> {
+        // Here we simulate calling the local or remote vault to compute its partial signature
+        // In real systems, this would be a gRPC or RPC call, or an in-process handler
+        let partial_sig = vault_partial_sign(vault_reference, custody_node_id, message)?;
+        Ok(partial_sig)
+    }
+
+    /// Didn't want to erase the one above yet. This one does the same thing but is for using gRPC
+    /// to make these requests across nodes instead of assuming local vaults
+    /// Orchestrates multi-node MPC signing by contacting all vaults.
+pub fn sign_with_group_grpc(
+    &self,
+    group: &MPCGroupDescriptor,
+    message: &[u8],
+) -> Result<Vec<u8>, MPCError> {
+    let mut partial_signatures = Vec::new();
+
+    for member in &group.members {
+        let mut client = CustodyVaultServiceClient::connect(format!(
+            "https://{}",
+            member.custody_node_id
+        ))?;
+        let response = client.request_partial_signature(RequestPartialSignatureRequest {
+            operational_did: group.group_id.clone(),
+            message: message.to_vec(),
+        }).await?;
+
+        let resp = response.into_inner();
+        partial_signatures.push((member.shard_index, resp.partial_signature));
+    }
+
+    // Aggregate the threshold signature using FROST or similar scheme
+    let aggregated_signature = frost_aggregate_signatures(&partial_signatures, group.threshold)?;
+    Ok(aggregated_signature)
+    }
+}
 

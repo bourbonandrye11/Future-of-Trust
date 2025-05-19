@@ -1,20 +1,33 @@
-
+/// This was the original backend that we built and needed refactoring.
+/// made a few updates and then decided to implement new files. 
+/// keeping this for records for now but can be deleted later. 
+/// updated file is vault/backend/simulated.rs
 
 use crate::types::CustodyShard; // The MPC shard struct we encrypt
+use crate::types::VaultRecord;
 use crate::error::CustodyError; // Our centralized error type
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 use bincode; // Binary serializer
 use aes_gcm::{Aes256Gcm, Key, Nonce}; // AES-256-GCM encryption primitive
 use aes_gcm::aead::{Aead, KeyInit}; // Traits for using AES-GCM securely
 use rand::RngCore; // For generating random keys/nonces
 use zeroize::Zeroizing; // Secure memory wipe when dropped
+use serde_json;
+use crate::vault::*;
 
 /// Trait for pluggable secure vault sealing (TEE, simulated, or mock).
+/// might separate out the trait to vault/backend/mod.rs
 pub trait VaultBackend: Send + Sync {
     /// seal a custody shard securely.
-    fn seal(&self, shard: &CustodyShard) -> Result<Vec<u8>, CustodyError>;
+    fn store_record(&self, vault_id: &str, record: &VaultRecord) -> Result<(), String>;
+    // Original fn commenting out for now to replace with refactor
+    //fn seal(&self, shard: &CustodyShard) -> Result<Vec<u8>, CustodyError>;
 
     /// Unseal a custody shard securely.
-    fn unseal(&self, data: &[u8]) -> Result<CustodyShard, CustodyError>;
+    fn load_record(&self, vault_id: &str) -> Result<VaultRecord, String>;
+    // Original fn commenting out for now to replace with refactor
+    //fn unseal(&self, data: &[u8]) -> Result<CustodyShard, CustodyError>;
 }
 
 /// This gives us a runtime-pluggable vault implementation interface.
@@ -36,12 +49,21 @@ impl VaultBackend for MemoryVaultBackend {
     }
 }
 
+/// Sealed vault blob, encrypted using AES-GCM
+struct SealedBlob {
+    ciphertext: Vec<u8>,
+    nonce: [u8; 12],
+}
+
 /// Simulated TEE vault that encrypts data using AES-256-GCM.
 /// This acts like an enclave: secrets only exist inside this struct.
 pub struct SimulatedTEEBackend {
+    store: Arc<RwLock<HashMap<String, SealedBlob>>>,
+    cipher: Aes256Gcm,
     /// This key simulates what would be generated/stored in SGX or TrustZone.
     /// It is wrapped in Zeroizing to auto-clear memory when dropped.
-    key: Zeroizing<[u8; 32]>,
+    // refactored code commented below out.
+    //key: Zeroizing<[u8; 32]>,
 }
 
 impl SimulatedTEEBackend {

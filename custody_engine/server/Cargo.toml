@@ -9,6 +9,7 @@ tonic = { version = "0.9", features = ["transport"] }
 prost = "0.11"
 prost-types = "0.11"
 tracing = "0.1"
+blake3 = "1"
 custody-engine = { path = "../engine" }
 
 [build-dependencies]

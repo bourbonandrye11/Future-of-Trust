@@ -1,0 +1,80 @@
+
+syntax = "proto3";
+
+package custody_registry;
+
+// OperationalDIDRegistry
+message RegisterOpDidRequest {
+  string operational_did = 1;
+  string root_did = 2;
+  string vault_id = 3;
+  bytes did_document = 4;
+}
+message RegisterOpDidResponse {}
+
+message GetVaultForOpDidRequest {
+  string operational_did = 1;
+}
+message GetVaultForOpDidResponse {
+  string vault_id = 1;
+}
+
+message GetDidDocumentRequest {
+  string operational_did = 1;
+}
+message GetDidDocumentResponse {
+  bytes did_document = 1;
+}
+
+message StoreDidDocumentRequest {
+  string operational_did = 1;
+  bytes did_document = 2;
+}
+message StoreDidDocumentResponse {}
+
+message RotateOperationalDidRequest {
+  string old_did = 1;
+  string new_did = 2;
+}
+message RotateOperationalDidResponse {}
+
+// IssuerRegistry
+message RegisterIssuerRequest {
+  string issuer_did = 1;
+  string vault_ref = 2;
+  string public_key = 3;
+}
+message RegisterIssuerResponse {}
+
+message RemoveIssuerRequest {
+  string issuer_did = 1;
+}
+message RemoveIssuerResponse {}
+
+message DeactivateIssuerRequest {
+  string issuer_did = 1;
+}
+message DeactivateIssuerResponse {}
+
+message GetIssuerRequest {
+    string issuer_did = 1;
+}
+message GetIssuerResponse {
+  string vault_ref = 1;
+  string public_key = 2;
+  bool active = 3;
+}
+
+service CustodyRegistry {
+  rpc RegisterOperationalDid(RegisterOpDidRequest) returns (RegisterOpDidResponse);
+  rpc GetVaultForOperationalDid(GetVaultForOpDidRequest) returns (GetVaultForOpDidResponse);
+
+  rpc RegisterIssuer(RegisterIssuerRequest) returns (RegisterIssuerResponse);
+  rpc RemoveIssuer(RemoveIssuerRequest) returns (RemoveIssuerResponse);
+  rpc DeactivateIssuer(DeactivateIssuerRequest) returns (DeactivateIssuerResponse);
+  rpc GetIssuer(GetIssuerRequest) returns (GetIssuerResponse);
+
+  rpc GetDidDocument(GetDidDocumentRequest) returns (GetDidDocumentResponse);
+  rpc StoreDidDocument(StoreDidDocumentRequest) returns (StoreDidDocumentResponse);
+  rpc RotateOperationalDid(RotateOperationalDidRequest) returns (RotateOperationalDidResponse);
+}

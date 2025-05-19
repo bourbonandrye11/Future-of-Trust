@@ -1,17 +1,24 @@
 /// for CLI
 /// 
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, Arg};
+use tonic::transport::Channel;
 use frost_ed25519::SignatureShare;
 use custody_engine::utils::filename::validate_shard_filename;
 use custody_engine::audit::{AUDIT, AuditRecord, AuditEventType, now_rfc3339};
 use custody_engine::logging::init_logging;
+use custody::custody_management_service_client::CustodyManagementServiceClient;
+use custody::GetDIDDocumentRequest;
 use std::path::Path;
 use custody_engine::{
    // init_logging,
     crypto::{keys, signing},
     mpc::SigningSession,
     types::ParticipantId,
+};
+use crate::proto::custody::custody_client::CustodyClient;
+use crate::proto::custodyvc::{
+    SignCredentialRequest, StoreCredentialRequest, GetCredentialRequest, RevokeCredentialRequest,
 };
 
 #[derive(Parser)]
@@ -63,6 +70,104 @@ enum Commands {
 
         #[arg(short, long, help = "Original message that was signed")]
         msg: String,
+    },
+
+    /// Sign a credential using issuer DID
+    SignCredential {
+        issuer_did: String,
+        vc_json: String,
+    },
+    /// Store a signed credential under a subject DID
+    StoreCredential {
+        subject_did: String,
+        signed_vc_json: String,
+    },
+    /// Retrieve a stored credential
+    GetCredential {
+        subject_did: String,
+        vc_id: String,
+    },
+    /// Revoke a stored credential
+    RevokeCredential {
+        issuer_did: String,
+        vc_id: String,
+    },
+
+    /// Vault Commands
+    GetVcByType {
+        vault_id: String,
+        vc_type: String,
+    },
+    DeleteVc {
+        vault_id: String,
+        vc_id: String,
+    },
+    GetBbsPrivateKey {
+        vault_id: String,
+    },
+    SetBbsPrivateKey {
+        vault_id: String,
+        key: String,
+    },
+    GetBbsPublicKey {
+        vault_id: String,
+    },
+    SetBbsPublicKey {
+        vault_id: String,
+        key: String,
+    },
+    GetPublicKeys {
+        vault_id: String,
+    },
+    AddPublicKey {
+        vault_id: String,
+        key: String,
+    },
+    RemovePublicKey {
+        vault_id: String,
+        key: String,
+    },
+
+    // Operational DID
+    RegisterOpDid {
+        operational_did: String,
+        root_did: String,
+        vault_id: String,
+        did_document_path: String,
+    },
+    GetVaultId {
+        operational_did: String,
+    },
+    GetDidDocument {
+        operational_did: String,
+    },
+    StoreDidDocument {
+        operational_did: String,
+        did_document_path: String,
+    },
+    RotateOpDid {
+        old_did: String,
+        new_did: String,
+    },
+
+    // Issuer
+    RegisterIssuer {
+        issuer_did: String,
+        vault_ref: String,
+        public_key: String,
+    },
+    GetIssuer {
+        issuer_did: String,
+    },
+    RemoveIssuer {
+        issuer_did: String,
+    },
+    DeactivateIssuer {
+        issuer_did: String,
+    },
+
+    GenerateIssuerKeys {
+        issuer_did: String,
     },
 }
 fn main() {
@@ -258,3 +363,276 @@ fn main() {
 // cargo run -p cli -- generate-keys --threshold 2 --participants 3 --vault tee-sim
 // --vault memory
 // cargo run -p cli -- aggregate-signature --shares abcd --shares efgh --msg "hello" --vault tee-sim
+
+/*
+    need to circle back to this part. 
+    fn manual_provision_vault(op_did: String, root_did: String) {
+    let vault = Vault::new_with_frost_group().unwrap();
+    registry.register(OperationalDID(op_did), RootDID(root_did), vault).unwrap();
+    println!("Vault manually provisioned.");
+}
+
+    we need to add a get-did-document command as well
+*/
+
+/*
+    use clap::{Command, Arg};
+use custody::custody_management_service_client::CustodyManagementServiceClient;
+use custody::ProvisionIdentityMaterialRequest;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let matches = Command::new("custody-cli")
+        .subcommand(
+            Command::new("provision-dkg")
+                .about("Trigger DKG provisioning for a new DID")
+                .arg(Arg::new("operational_did").required(true))
+                .arg(Arg::new("root_did").required(true)),
+        )
+        .subcommand(
+            Command::new("get-mpc-group")
+                .about("Get MPC group config for a DID")
+                .arg(Arg::new("operational_did").required(true)),
+        )
+        .get_matches();
+
+    if let Some(sub) = matches.subcommand_matches("provision-dkg") {
+        let op_did = sub.get_one::<String>("operational_did").unwrap();
+        let root_did = sub.get_one::<String>("root_did").unwrap();
+
+        let mut client = CustodyManagementServiceClient::connect("http://[::1]:50051").await?;
+        let response = client.provision_identity_material(ProvisionIdentityMaterialRequest {
+            operational_did: op_did.clone(),
+            root_did: root_did.clone(),
+        }).await?;
+
+        println!("Provisioned DKG for DID {} with public key commitment {:?}", op_did, response.into_inner().public_key_commitment);
+    }
+
+    Ok(())
+}
+
+if let Some(sub) = matches.subcommand_matches("get-mpc-group") {
+    let op_did = sub.get_one::<String>("operational_did").unwrap();
+
+    let mut client = CustodyManagementServiceClient::connect("http://[::1]:50051").await?;
+    let response = client.get_mpc_group_descriptor(GetMPCGroupDescriptorRequest {
+        operational_did: op_did.clone(),
+    }).await?;
+
+    let resp = response.into_inner();
+    println!("MPC Group ID: {}", resp.group_id);
+    println!("Threshold: {}", resp.threshold);
+    println!("Custody Nodes:");
+    for node in resp.custody_nodes {
+        println!(" - {}", node);
+    }
+}
+
+    I added these to the Enum but it wants to connect to gRPC and we didn't set this up that way
+    on purpose. so adding here for now. 
+
+    pub async fn run_cli(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
+    // Connect to the Custody Engine gRPC server
+    let mut client = CustodyVcClient::connect("http://[::1]:50051").await?;
+
+    match cli.command {
+        Commands::SignCredential { issuer_did, vc_json } => {
+            let response = client.sign_credential(SignCredentialRequest {
+                issuer_did,
+                vc_json,
+            }).await?;
+            println!("Signed VC JSON:\n{}", response.into_inner().signed_vc_json);
+        }
+        Commands::StoreCredential { subject_did, signed_vc_json } => {
+            let response = client.store_credential(StoreCredentialRequest {
+                subject_did,
+                signed_vc_json,
+            }).await?;
+            println!("Stored VC successfully: {}", response.into_inner().success);
+        }
+        Commands::GetCredential { subject_did, vc_id } => {
+            let response = client.get_credential(GetCredentialRequest {
+                subject_did,
+                vc_id,
+            }).await?;
+            println!("Retrieved VC:\n{}", response.into_inner().signed_vc_json);
+        }
+        Commands::RevokeCredential { issuer_did, vc_id } => {
+            let response = client.revoke_credential(RevokeCredentialRequest {
+                issuer_did,
+                vc_id,
+            }).await?;
+            println!("Revoked VC successfully: {}", response.into_inner().success);
+        }
+
+        Commands::GetVcByType { vault_id, vc_type } => {
+            let mut client = CustodyVcClient::connect("http://[::1]:50051").await?;
+            let response = client.get_vc_by_type(GetVcByTypeRequest {
+                vault_id,
+                vc_type,
+            }).await?;
+            println!("VC Found:\n{}", response.into_inner().vc_json);
+        }
+
+        Commands::DeleteVc { vault_id, vc_id } => {
+            let mut client = CustodyVcClient::connect("http://[::1]:50051").await?;
+            let response = client.delete_vc(DeleteVcRequest {
+                vault_id,
+                vc_id,
+            }).await?;
+            println!("VC Deleted: {}", response.into_inner().success);
+        }
+
+        Commands::GetBbsPrivateKey { vault_id } => {
+            let mut client = CustodyVcClient::connect("http://[::1]:50051").await?;
+            let response = client.get_bbs_private_key(GetBbsKeyRequest {
+                vault_id,
+            }).await?;
+            println!("BBS Private Key:\n{}", response.into_inner().key);
+        }
+
+        Commands::SetBbsPrivateKey { vault_id, key } => {
+            let mut client = CustodyVcClient::connect("http://[::1]:50051").await?;
+            let response = client.set_bbs_private_key(SetBbsKeyRequest {
+                vault_id,
+                key,
+            }).await?;
+            println!("Private Key Set: {}", response.into_inner().success);
+        }
+
+        Commands::GetBbsPublicKey { vault_id } => {
+            let mut client = CustodyVcClient::connect("http://[::1]:50051").await?;
+            let response = client.get_bbs_public_key(GetBbsKeyRequest {
+                vault_id,
+            }).await?;
+            println!("BBS Public Key:\n{}", response.into_inner().key);
+        }
+
+        Commands::SetBbsPublicKey { vault_id, key } => {
+            let mut client = CustodyVcClient::connect("http://[::1]:50051").await?;
+            let response = client.set_bbs_public_key(SetBbsKeyRequest {
+                vault_id,
+                key,
+            }).await?;
+            println!("Public Key Set: {}", response.into_inner().success);
+        }
+
+        Commands::GetPublicKeys { vault_id } => {
+            let mut client = CustodyVcClient::connect("http://[::1]:50051").await?;
+            let response = client.get_public_keys(GetPublicKeysRequest {
+                vault_id,
+            }).await?;
+            println!("Public Keys:\n{:#?}", response.into_inner().keys);
+        }
+
+        Commands::AddPublicKey { vault_id, key } => {
+            let mut client = CustodyVcClient::connect("http://[::1]:50051").await?;
+            let response = client.add_public_key(AddPublicKeyRequest {
+                vault_id,
+                key,
+            }).await?;
+            println!("Public Key Added: {}", response.into_inner().success);
+        }
+
+        Commands::RemovePublicKey { vault_id, key } => {
+            let mut client = CustodyVcClient::connect("http://[::1]:50051").await?;
+            let response = client.remove_public_key(RemovePublicKeyRequest {
+                vault_id,
+                key,
+            }).await?;
+            println!("Public Key Removed: {}", response.into_inner().success);
+        }
+
+        Commands::RegisterOpDid { operational_did, root_did, vault_id, did_document_path } => {
+            let doc_bytes = std::fs::read(did_document_path)?;
+            let mut client = CustodyRegistryClient::connect("http://[::1]:50051").await?;
+            client.register_operational_did(RegisterOpDidRequest {
+                operational_did,
+                root_did,
+                vault_id,
+                did_document: doc_bytes,
+            }).await?;
+            println!("Operational DID registered.");
+        }
+
+        Commands::GetVaultId { operational_did } => {
+            let mut client = CustodyRegistryClient::connect("http://[::1]:50051").await?;
+            let response = client.get_vault_for_operational_did(GetVaultForOpDidRequest {
+                operational_did,
+            }).await?;
+            println!("Vault ID: {}", response.into_inner().vault_id);
+        }
+
+        Commands::GetDidDocument { operational_did } => {
+            let mut client = CustodyRegistryClient::connect("http://[::1]:50051").await?;
+            let response = client.get_did_document(GetDidDocumentRequest {
+                operational_did,
+            }).await?;
+            std::fs::write("did_document.json", &response.into_inner().did_document)?;
+            println!("Wrote DID document to did_document.json");
+        }
+
+        Commands::StoreDidDocument { operational_did, did_document_path } => {
+            let doc_bytes = std::fs::read(did_document_path)?;
+            let mut client = CustodyRegistryClient::connect("http://[::1]:50051").await?;
+            client.store_did_document(StoreDidDocumentRequest {
+                operational_did,
+                did_document: doc_bytes,
+            }).await?;
+            println!("DID document stored.");
+        }
+
+        Commands::RotateOpDid { old_did, new_did } => {
+            let mut client = CustodyRegistryClient::connect("http://[::1]:50051").await?;
+            client.rotate_operational_did(RotateOperationalDidRequest {
+                old_did,
+                new_did,
+            }).await?;
+            println!("Operational DID rotated.");
+        }
+
+        // Issuer Registry CLI
+
+        Commands::RegisterIssuer { issuer_did, vault_ref, public_key } => {
+            let mut client = CustodyRegistryClient::connect("http://[::1]:50051").await?;
+            client.register_issuer(RegisterIssuerRequest {
+                issuer_did,
+                vault_ref,
+                public_key,
+            }).await?;
+            println!("Issuer registered.");
+        }
+
+        Commands::GetIssuer { issuer_did } => {
+            let mut client = CustodyRegistryClient::connect("http://[::1]:50051").await?;
+            let resp = client.get_issuer(GetIssuerRequest {
+                issuer_did,
+            }).await?.into_inner();
+            println!("Vault: {}\nPublic Key: {}\nActive: {}", resp.vault_ref, resp.public_key, resp.active);
+        }
+
+        Commands::RemoveIssuer { issuer_did } => {
+            let mut client = CustodyRegistryClient::connect("http://[::1]:50051").await?;
+            client.remove_issuer(RemoveIssuerRequest { issuer_did }).await?;
+            println!("Issuer removed.");
+        }
+
+        Commands::DeactivateIssuer { issuer_did } => {
+            let mut client = CustodyRegistryClient::connect("http://[::1]:50051").await?;
+            client.deactivate_issuer(DeactivateIssuerRequest { issuer_did }).await?;
+            println!("Issuer deactivated.");
+        }
+
+        Commands::GenerateIssuerKeys { issuer_did } => {
+        let mut client = CustodyVcClient::connect("http://[::1]:50051").await?;
+        let response = client.generate_issuer_keys(GenerateIssuerKeysRequest {
+            issuer_did,
+        }).await?;
+        println!("Issuer public key:\n{}", response.into_inner().public_key);
+        }
+    }
+    Ok(())
+}
+
+*/

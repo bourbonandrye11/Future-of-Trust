@@ -71,6 +71,9 @@ message HealthCheckResponse {
 
 service CustodyManagementService {
     rpc ProvisionIdentityMaterial(ProvisionIdentityMaterialRequest) returns (ProvisionIdentityMaterialResponse);
+    rpc StoreDIDDocument(StoreDIDDocumentRequest) returns (StoreDIDDocumentResponse);
+    rpc GetDIDDocument(GetDIDDocumentRequest) returns (GetDIDDocumentResponse);
+
     rpc RegisterOperationalDID(RegisterOperationalDIDRequest) returns (RegisterOperationalDIDResponse);
     rpc RotateOperationalDID(RotateOperationalDIDRequest) returns (RotateOperationalDIDResponse);
     rpc RevokeOperationalDID(RevokeOperationalDIDRequest) returns (RevokeOperationalDIDResponse);
@@ -80,6 +83,48 @@ service CustodyManagementService {
     rpc VerifyVCIntegrity(VerifyVCIntegrityRequest) returns (VerifyVCIntegrityResponse);
 
     rpc GetVCAuditTrail(GetVCAuditTrailRequest) returns (GetVCAuditTrailResponse);
+}
+
+// ==========================
+// Custody VC Service
+// ==========================
+
+service CustodyVC {
+    // need to look at integrating these later. this was skimmed over after VCManager.
+    // =================================================================================
+    rpc SignCredential(SignCredentialRequest) returns (SignCredentialResponse);
+    rpc StoreCredential(StoreCredentialRequest) returns (StoreCredentialResponse);
+    rpc GetCredential(GetCredentialRequest) returns (GetCredentialResponse);
+    rpc RevokeCredential(RevokeCredentialRequest) returns (RevokeCredentialResponse);
+
+    rpc GetVcByType(GetVcByTypeRequest) returns (GetVcByTypeResponse);
+    rpc DeleteVc(DeleteVcRequest) returns (DeleteVcResponse);
+
+    rpc GetBbsPrivateKey(GetBbsKeyRequest) returns (GetBbsKeyResponse);
+    rpc SetBbsPrivateKey(SetBbsKeyRequest) returns (SetBbsKeyResponse);
+    rpc GetBbsPublicKey(GetBbsKeyRequest) returns (GetBbsKeyResponse);
+    rpc SetBbsPublicKey(SetBbsKeyRequest) returns (SetBbsKeyResponse);
+
+    rpc GetPublicKeys(GetPublicKeysRequest) returns (GetPublicKeysResponse);
+    rpc AddPublicKey(AddPublicKeyRequest) returns (PublicKeyUpdateResponse);
+    rpc RemovePublicKey(RemovePublicKeyRequest) returns (PublicKeyUpdateResponse);
+
+    rpc GenerateIssuerKeys(GenerateIssuerKeysRequest) returns (GenerateIssuerKeysResponse);
+    // ==================================================================================
+}
+
+// ==========================
+// Custody Vault Service DKG
+// ==========================
+
+service CustodyVaultService {
+    // Launches DKG setup on a vault
+    rpc StartDKGSession(StartDKGSessionRequest) returns (StartDKGSessionResponse);
+    // Vault-to-vault message passing
+    rpc SubmitDKGMessage(SubmitDKGMessageRequest) returns (SubmitDKGMessageResponse);
+    // Finalizes dKG and returns the public key commitment
+    rpc CompleteDKGSession(CompleteDKGSessionRequest) returns (CompleteDKGSessionResponse);
+    rpc RequestPartialSignature(RequestPartialSignatureRequest) returns (RequestPartialSignatureResponse);
 }
 
 // ==========================
@@ -100,8 +145,71 @@ message VerifiableCredential {
 }
 
 // ==========================
+// DKG Coordination
+// ==========================
+
+message StartDKGSessionRequest {
+    string group_id = 1;
+    string operational_did = 2;
+    uint32 threshold = 3;
+    repeated string participant_nodes = 4;
+}
+
+message StartDKGSessionResponse {
+    bool success = 1;
+}
+
+message SubmitDKGMessageRequest {
+    string group_id = 1;
+    string sender_node_id = 2;
+    bytes dkg_payload = 3;
+}
+
+message SubmitDKGMessageResponse {
+    bool success = 1;
+}
+
+message CompleteDKGSessionRequest {
+    string group_id = 1;
+}
+
+message CompleteDKGSessionResponse {
+    bytes public_key_commitment = 1;
+}
+
+// For partial signing across custody nodes
+message RequestPartialSignatureRequest {
+    string operational_did = 1;
+    bytes message = 2;
+}
+
+message RequestPartialSignatureResponse {
+    bytes partial_signature = 1;
+}
+
+// ==========================
 // DID Management Requests
 // ==========================
+
+message StoreDIDDocumentRequest {
+    string operational_did = 1;
+    string root_did = 2;
+    bytes did_document = 3; // Serialized JSON-LD or CBOR DID doc sent from identity engine
+}
+
+message StoreDIDDocumentResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+message GetDIDDocumentRequest {
+    string operational_did = 1;
+}
+
+message GetDIDDocumentResponse {
+    bytes did_document = 1;
+    bool found = 2;
+}
 
 message RegisterOperationalDIDRequest {
   OperationalDID operational_did = 1;
@@ -187,4 +295,109 @@ message AuditRecord {
 
 message GetVCAuditTrailResponse {
   repeated AuditRecord records = 1;
+}
+
+// ==========================
+// sign, store, get, revoke, VC. This is a new section that might replace some of the others and need integration
+// Custody VC Service
+// ==========================
+
+// Request to sign a VC
+message SignCredentialRequest {
+    string issuer_did = 1;
+    string vc_json = 2;
+    string vc_type = 3; // e.g., "root" or "attribute" NEW FIELD: allows caller to specify root or attribute VC
+}
+
+message SignCredentialResponse {
+    string signed_vc_json = 1;
+}
+
+// Request to store a signed VC
+message StoreCredentialRequest {
+    string subject_did = 1;
+    string signed_vc_json = 2;
+}
+
+message StoreCredentialResponse {
+    bool success = 1;
+}
+
+// Request to retrieve a VC
+message GetCredentialRequest {
+    string subject_did = 1;
+    string vc_id = 2;
+}
+
+message GetCredentialResponse {
+    string signed_vc_json = 1;
+}
+
+// Request to revoke a VC
+message RevokeCredentialRequest {
+    string issuer_did = 1;
+    string vc_id = 2;
+}
+
+message RevokeCredentialResponse {
+    bool success = 1;
+}
+
+// Vault access: VC by type
+message GetVcByTypeRequest {
+  string vault_id = 1;
+  string vc_type = 2;
+}
+message GetVcByTypeResponse {
+  string vc_json = 1;
+}
+
+// VC Deletion
+message DeleteVcRequest {
+  string vault_id = 1;
+  string vc_id = 2;
+}
+message DeleteVcResponse {
+  bool success = 1;
+}
+
+// BBS+ keys
+message GetBbsKeyRequest {
+  string vault_id = 1;
+}
+message GetBbsKeyResponse {
+  string key = 1;
+}
+message SetBbsKeyRequest {
+  string vault_id = 1;
+  string key = 1;
+}
+message SetBbsKeyResponse {
+  bool success = 1;
+}
+
+// Public keys
+message GetPublicKeysRequest {
+  string vault_id = 1;
+}
+message GetPublicKeysResponse {
+  repeated string keys = 1;
+}
+message AddPublicKeyRequest {
+  string vault_id = 1;
+  string key = 2;
+}
+message RemovePublicKeyRequest {
+  string vault_id = 1;
+  string key = 2;
+}
+message PublicKeyUpdateResponse {
+  bool success = 1;
+}
+
+message GenerateIssuerKeysRequest {
+  string issuer_did = 1;
+}
+message GenerateIssuerKeysResponse {
+  string public_key = 1;
 }
