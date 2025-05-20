@@ -1,0 +1,31 @@
+
+// File: proto/dkg.proto
+syntax = "proto3";
+
+package custodydkg;
+
+message StartDkgSessionRequest {
+  string operational_did = 1;
+  uint32 threshold = 2;
+  repeated string participant_nodes = 3;
+}
+message StartDkgSessionResponse {
+  string group_id = 1;
+}
+
+message BroadcastRound2Request {
+  string group_id = 1;
+}
+
+message FinalizeDkgRequest {
+  string group_id = 1;
+}
+message FinalizeDkgResponse {
+  string shard_base64 = 1;
+}
+
+service CustodyDkg {
+  rpc StartDkgSession(StartDkgSessionRequest) returns (StartDkgSessionResponse);
+  rpc BroadcastRound2(BroadcastRound2Request) returns (google.protobuf.Empty);
+  rpc FinalizeDkgSession(FinalizeDkgRequest) returns (FinalizeDkgResponse);
+}

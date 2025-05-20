@@ -8,7 +8,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &[
             "proto/custody.proto",
             "proto/registry.proto",
-            "proto/relay.proto"
+            "proto/relay.proto",
+            "proto/dkg.proto",
+            "proto/vault.proto",
+            "proto/mpc.proto",
+            "proto/issuer.proto"
         ],
         &["proto"],
     )

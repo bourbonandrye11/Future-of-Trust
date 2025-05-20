@@ -1,5 +1,10 @@
 //! MPC signing session management.
-//!
+//! 
+//! engine/src/mpc/mod.rs
+//! 
+//! this was the original file that is no longer needed
+//! moving it to remove folder
+//! 
 //! This module coordinates threshold key generation, signing session setup,
 //! nonce management, partial signature creation, and aggregation into final signatures.
 

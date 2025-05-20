@@ -1,0 +1,38 @@
+
+syntax = "proto3";
+
+package mpc;
+
+message SignMessageRequest {
+  string operational_did = 1;
+  bytes message = 2;
+}
+
+message SignMessageResponse {
+  bytes signature = 1;
+}
+
+message ProvisionVaultAndShardsRequest {
+  string operational_did = 1;
+  string root_did = 2;
+}
+
+message ProvisionVaultAndShardsResponse {
+  string vault_id = 1;
+  string group_id = 2;
+  bytes group_public_key = 3;
+}
+
+message RotateShardsRequest {
+  string operational_did = 1;
+}
+
+message RotateShardsResponse {
+  string new_group_id = 1;
+}
+
+service CustodyMpc {
+  rpc SignMessage(SignMessageRequest) returns (SignMessageResponse);
+  rpc ProvisionVaultAndShards(ProvisionVaultAndShardsRequest) returns (ProvisionVaultAndShardsResponse);
+  rpc RotateShards(RotateShardsRequest) returns (RotateShardsResponse);
+}

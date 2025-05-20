@@ -14,9 +14,18 @@ use crate::issuer_registry::IssuerRegistry;
 use crate::bbs::{extract_vc_messages, sign_vc_messages};
 use crate::bbs; 
 
+use base64;
+use chrono;
+use custodympc::custody_mpc_client::CustodyMpcClient;
+use custodympc::{SignMessageRequest, SignMessageResponse};
+
 use crate::vc_store::VcStore;
 use crate::mpc::MpcSigningCoordinator; // hypothetical existing module
 use crate::bbs::BbsPlusSigner;         // hypothetical BBS+ module
+
+pub mod custodympc {
+    tonic::include_proto!("mpc");
+}
 
 /// Struct holding service dependencies (vault, registry, VC store)
 pub struct CustodyVcService {
@@ -53,24 +62,39 @@ impl CustodyVc for CustodyVcService {
         // Match based on VC type
         match vc_type {
             "root" => {
-                // TODO: Replace with actual MPC signing coordinator
-                println!("[sign_credential] Routing root VC through MPC signing stub");
+                println!("[sign_credential] Routing root VC through MPC coordinator");
 
-                let fake_signature = "MPC_SIGNATURE_PLACEHOLDER";
+                // Convert the VC JSON to bytes (message to sign)
+                let message_bytes = vc_json.as_bytes().to_vec();
+
+                // Use the gRPC client to request signature from CustodyMpc
+                let mut mpc_client = custodympc::custody_mpc_client::CustodyMpcClient::connect("http://[::1]:50051")
+                    .await
+                    .map_err(|e| Status::internal(format!("MPC client connect failed: {e}")))?;
+
+                let mpc_resp = mpc_client.sign_message(custodympc::SignMessageRequest {
+                    operational_did: req.issuer_did.clone(), // Issuer is the op_did in this case
+                    message: message_bytes,
+                }).await.map_err(|e| Status::internal(format!("MPC sign_message failed: {e}")))?;
+
+                let signature = base64::encode(mpc_resp.into_inner().signature);
+
+                // Inject signature into VC JSON
                 let mut vc: serde_json::Value = serde_json::from_str(&vc_json)
                     .map_err(|e| Status::invalid_argument(format!("Invalid JSON: {:?}", e)))?;
 
                 vc["proof"] = serde_json::json!({
                     "type": "MPCSignature2023",
                     "created": chrono::Utc::now().to_rfc3339(),
-                    "signature": fake_signature,
+                    "signature": signature,
                 });
 
                 let signed_json = serde_json::to_string(&vc).unwrap();
 
-                // Store in vault
-                let vc_id = extract_vc_id(&signed_json).ok_or_else(|| Status::invalid_argument("Missing VC id"))?;
-                vault::add_vc(&vault_id, &vc_id, &signed_json)
+                let vc_id = extract_vc_id(&signed_json)
+                    .ok_or_else(|| Status::invalid_argument("Missing VC id"))?;
+
+                vault::add_vc(&req.issuer_did, &vc_id, &signed_json)
                     .map_err(|e| Status::internal(e))?;
 
                 Ok(Response::new(SignCredentialResponse {

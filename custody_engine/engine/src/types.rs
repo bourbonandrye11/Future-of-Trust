@@ -42,4 +42,5 @@ pub struct VaultRecord {
     pub vcs: Vec<VcRecord>,                       // Stored VC entries (root + attribute)
     pub bbs_private_key: Option<String>,          // Issuer key if this vault belongs to an issuer
     pub bbs_public_key: Option<String>,
+    pub active_nonce: Option<Vec<u8>>, // Binary nonce blob (bincode serialized)
 }

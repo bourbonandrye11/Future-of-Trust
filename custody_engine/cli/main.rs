@@ -20,6 +20,11 @@ use crate::proto::custody::custody_client::CustodyClient;
 use crate::proto::custodyvc::{
     SignCredentialRequest, StoreCredentialRequest, GetCredentialRequest, RevokeCredentialRequest,
 };
+use custodydkg::custody_dkg_client::CustodyDkgClient;
+use custodydkg::{
+    StartDkgSessionRequest, StartDkgSessionResponse,
+    BroadcastRound2Request, FinalizeDkgRequest, FinalizeDkgResponse,
+};
 
 #[derive(Parser)]
 #[command(name = "custody", version = "0.1", author = "Custody Team", about = "Custody MPC CLI")]
@@ -31,7 +36,9 @@ struct Cli {
 }
 
 #[derive(Subcommand)]
-enum Commands {
+pub enum Commands {
+    #[command(subcommand)]
+    Dkg(DkgCommand),
     /// Generate a new MPC key set
     GenerateKeys {
         #[arg(short, long)]
@@ -170,6 +177,27 @@ enum Commands {
         issuer_did: String,
     },
 }
+
+#[derive(Subcommand)]
+pub enum DkgCommand {
+    Start {
+        #[arg(long)]
+        op_did: String,
+        #[arg(long)]
+        threshold: u8,
+        #[arg(long)]
+        peers: Vec<String>,
+    },
+    Round2 {
+        #[arg(long)]
+        group_id: String,
+    },
+    Finalize {
+        #[arg(long)]
+        group_id: String,
+    },
+}
+
 fn main() {
     // Initialize structured logging using `tracing`
     // This sets up debug/info/error level logging across the CLI
@@ -631,6 +659,34 @@ if let Some(sub) = matches.subcommand_matches("get-mpc-group") {
         }).await?;
         println!("Issuer public key:\n{}", response.into_inner().public_key);
         }
+
+        Commands::Dkg(cmd) => match cmd {
+        DkgCommand::Start { op_did, threshold, peers } => {
+            let mut client = CustodyDkgClient::connect("http://[::1]:50051").await?;
+            let response = client.start_dkg_session(StartDkgSessionRequest {
+                operational_did: op_did.clone(),
+                threshold: *threshold as u32,
+                participant_nodes: peers.clone(),
+            }).await?.into_inner();
+            println!("🟢 DKG Session started.\nGroup ID: {}", response.group_id);
+        }
+
+        DkgCommand::Round2 { group_id } => {
+            let mut client = CustodyDkgClient::connect("http://[::1]:50051").await?;
+            client.broadcast_round2(BroadcastRound2Request {
+                group_id: group_id.clone(),
+            }).await?;
+            println!("📤 Round 2 broadcasted.");
+        }
+
+        DkgCommand::Finalize { group_id } => {
+            let mut client = CustodyDkgClient::connect("http://[::1]:50051").await?;
+            let resp = client.finalize_dkg_session(FinalizeDkgRequest {
+                group_id: group_id.clone(),
+            }).await?.into_inner();
+            println!("✅ Finalized. Stored shard (base64):\n{}", resp.shard_base64);
+        }
+    }
     }
     Ok(())
 }

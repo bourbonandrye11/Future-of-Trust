@@ -1,0 +1,16 @@
+
+syntax = "proto3";
+
+package issuer;
+
+message ProvisionIssuerVaultRequest {
+  string issuer_did = 1;
+}
+
+message ProvisionIssuerVaultResponse {
+  string vault_id = 1;
+}
+
+service CustodyIssuer {
+  rpc ProvisionIssuerVault(ProvisionIssuerVaultRequest) returns (ProvisionIssuerVaultResponse);
+}

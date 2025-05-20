@@ -59,11 +59,53 @@ pub fn load_record(vault_id: &str) -> Result<VaultRecord, String> {
         .load_record(vault_id)
 }
 
+/// This is a helper for add_shard that will do a registry lookup of op_did 
+/// to retrieve the associated vault_id. adding for now but it isn't used anywhere yet.
+pub fn add_shard_for_did(
+    registry: &OperationalDIDRegistry,
+    op_did: &str,
+    shard_b64: &str,
+) -> Result<(), String> {
+    let vault_id = registry.get_vault_id_for_operational_did(op_did)
+        .ok_or("Vault ID not found")?;
+
+    add_shard(&vault_id, shard_b64)
+}
+
 /// Add an MPC shard to the vault
 pub fn add_shard(vault_id: &str, shard: &str) -> Result<(), String> {
     let mut record = load_record(vault_id)?;
     record.mpc_shard = Some(shard.to_string());
     store_record(vault_id, &record)
+}
+
+/// Get MPC shard from vault for signing session
+pub fn get_shard(registry: &OperationalDIDRegistry, op_did: &str) -> Result<String, String> {
+    // Lookup vault ID
+    let vault_id = registry.get_vault_id_for_op_did(op_did)
+        .ok_or("Vault ID not found for operational DID")?;
+
+    // Load vault record
+    let record = load_record(&vault_id)?;
+
+    record.mpc_shard.clone().ok_or("Shard not found".to_string())
+}
+
+pub fn set_nonce(registry: &OperationalDIDRegistry, op_did: &str, nonce_bytes: Vec<u8>) -> Result<(), String> {
+    let vault_id = registry.get_vault_id_for_op_did(op_did)
+        .ok_or("Vault not found")?;
+
+    let mut record = load_record(&vault_id)?;
+    record.active_nonce = Some(nonce_bytes);
+    store_record(&vault_id, &record)
+}
+
+pub fn get_nonce(registry: &OperationalDIDRegistry, op_did: &str) -> Result<Vec<u8>, String> {
+    let vault_id = registry.get_vault_id_for_op_did(op_did)
+        .ok_or("Vault not found")?;
+
+    let record = load_record(&vault_id)?;
+    record.active_nonce.clone().ok_or("Nonce not found".to_string())
 }
 
 /// Add a verifiable credential to the vault
@@ -231,3 +273,6 @@ impl Vault {
 // with this we have  aruntime pluggable vault backend interface, a fully working AES-256-GCM sealing engine,
 // a simulated TEE key that is never leaked or stored, a Tamper-resistent, authenticated shard stored. 
 // this is 100% TEE-compatible vault code ready for SGX/Nitro/TrustZone backends. 
+
+// Assuming vault.rs already has access to OperationalDIDRegistry (inject it at boot):
+// need to check what this entails.

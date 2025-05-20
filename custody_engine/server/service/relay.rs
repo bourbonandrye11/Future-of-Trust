@@ -11,6 +11,10 @@ use custodyrelay::custody_relay_server::{CustodyRelay, CustodyRelayServer};
 use custodyrelay::{RelayMessage, Empty};
 use crate::custodyrelay::custody_relay_server::{CustodyRelay, CustodyRelayServer};
 
+pub mod custody {
+    tonic::include_proto!("custodyrelay");
+}
+
 /// Relay service for custody node-to-node communication
 #[derive(Clone)]
 pub struct RelayService {

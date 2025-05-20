@@ -119,8 +119,22 @@ impl DKGEngine {
 
         let (key_package, pubkeys) = machine.finish(&received).map_err(|e| DKGError::CryptoFailure(format!("Finalize failed: {e:?}")))?;
 
+        // added this in to query registry for vault_id since add_shard needs vault_id
+        // optionally could add a helper in vault which I will place and comment out
+        let vault_id = registry
+            .get_vault_id_for_operational_did(&session.local.operational_did)
+            .ok_or(DKGError::VaultNotFound)?;
+
         let shard = key_package.secret_share().serialize();
-        vault::add_shard(&session.local.operational_did, &base64::encode(&shard)).map_err(|e| DKGError::VaultStorageFailed)?;
+        vault::add_shard(&vault_id, &base64::encode(&shard))
+            .map_err(|e| DKGError::VaultStorageFailed)?;
+
+        // This is what we'd use if we utilized the helper. 
+        // vault::add_shard_for_did(registry, &session.local.operational_did, &base64::encode(&shard))?;
+
+
+       // this is the original vault call that used did if I end up switching to the helper
+       // vault::add_shard(&session.local.operational_did, &base64::encode(&shard)).map_err(|e| DKGError::VaultStorageFailed)?;
 
         let mpc_group = MPCGroupDescriptor {
             group_id: group_id.to_string(),
